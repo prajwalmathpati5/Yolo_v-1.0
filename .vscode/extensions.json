@@ -1,0 +1,9 @@
+{
+  "recommendations": [
+    "dbaeumer.vscode-eslint",
+    "esbenp.prettier-vscode",
+    "bradlc.vscode-tailwind-css",
+    "firebase.firebase-vscode",
+    "mikestead.dotenv"
+  ]
+}
