@@ -43,7 +43,7 @@ export async function analyzeNeed(input: AnalyzeNeedInput): Promise<AnalyzeNeedO
   const result = await analyzeNeedFlow(input);
   if (result.additionalInfo) {
       // Sanitize and convert markdown to HTML for safe rendering.
-      result.additionalInfo = marked.parse(result.additionalInfo, { gfm: true, breaks: true });
+      result.additionalInfo = await marked.parse(result.additionalInfo, { gfm: true, breaks: true });
   }
   return result;
 }

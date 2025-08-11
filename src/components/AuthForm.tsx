@@ -84,68 +84,30 @@ export function AuthForm() {
   
   const profileType = signupForm.watch('profileType');
 
+  // MOCKED LOGIN
   const onLogin = async (values: z.infer<typeof loginSchema>) => {
     setIsLoading(true);
-    try {
-      await signInWithEmailAndPassword(auth, values.email, values.password);
-      router.push('/home');
-    } catch (error: any) {
+    setTimeout(() => {
       toast({
-        variant: 'destructive',
-        title: 'Login Failed',
-        description: error.message,
+        title: 'Login Successful (Mocked)',
+        description: `Welcome, ${values.email}!`,
       });
-    } finally {
+      router.push('/home');
       setIsLoading(false);
-    }
+    }, 1000);
   };
 
+  // MOCKED SIGNUP
   const onSignup = async (values: z.infer<typeof signupSchema>) => {
     setIsLoading(true);
-    try {
-      const userCredential = await createUserWithEmailAndPassword(auth, values.email, values.password);
-      const user = userCredential.user;
-      
-      await updateProfile(user, { displayName: values.name, photoURL: `https://placehold.co/100x100.png?text=${values.name.charAt(0)}` });
-
-      const userProfile: Omit<UserProfile, 'uid'> = {
-        name: values.name,
-        email: values.email,
-        photoUrl: user.photoURL || `https://placehold.co/100x100.png?text=${values.name.charAt(0)}`,
-        role: 'user',
-        profileType: values.profileType,
-        available: true,
-      };
-
-      if (values.profileType === 'provider') {
-        userProfile.category = values.category;
-        userProfile.phone_number = values.phone_number;
-        userProfile.avg_cost = values.avg_cost ? Number(values.avg_cost) : 0;
-        
-        // Also create a document in the 'providers' collection
-        const providerData = {
-          name: values.name,
-          category: values.category,
-          phone_number: values.phone_number,
-          avg_cost: values.avg_cost ? Number(values.avg_cost) : 0,
-          available: true,
-        };
-        await setDoc(doc(db, 'providers', user.uid), providerData);
-      }
-
-
-      await setDoc(doc(db, 'users', user.uid), userProfile);
-      
-      router.push('/home');
-    } catch (error: any) {
+    setTimeout(() => {
       toast({
-        variant: 'destructive',
-        title: 'Sign Up Failed',
-        description: error.message,
+        title: 'Sign Up Successful (Mocked)',
+        description: `Account created for ${values.email}!`,
       });
-    } finally {
+      router.push('/home');
       setIsLoading(false);
-    }
+    }, 1200);
   };
   
   const handleGoogleSignIn = async () => {
@@ -305,7 +267,7 @@ export function AuthForm() {
                               placeholder="e.g., 5000" 
                               {...field} 
                               onChange={e => {
-                                const value = e.target.value;
+                                const { value } = e.target;
                                 if (value === '' || /^\d*$/.test(value)) {
                                   field.onChange(value);
                                 }

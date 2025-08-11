@@ -1,5 +1,6 @@
+
 'use client';
-import { createContext, useContext, useState, ReactNode, useMemo, useEffect } from 'react';
+import React, { createContext, useContext, useState, ReactNode, useMemo, useEffect } from 'react';
 import { onAuthStateChanged, User as FirebaseAuthUser } from 'firebase/auth';
 import { doc, getDoc, setDoc, updateDoc, deleteDoc } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
@@ -47,15 +48,21 @@ export const UserProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   const updateUserProfile = async (data: Partial<Omit<UserProfile, 'uid'>>) => {
-    if (!user) return;
+    if (!user) {
+      return;
+    }
     
     setLoading(true);
     const userRef = doc(db, 'users', user.uid);
-    const currentProfile = (await getDoc(userRef)).data() as UserProfile;
+    const wasProvider = user.profileType === 'provider';
     
+    // Optimistically update local state
+    const updatedUser = { ...user, ...data };
+    setUser(updatedUser);
+    
+    // Update Firestore user document
     await updateDoc(userRef, data);
 
-    const updatedUser = { ...user, ...data };
     const providerRef = doc(db, 'providers', user.uid);
 
     // If user is now a provider, create/update the provider document
@@ -65,20 +72,19 @@ export const UserProvider = ({ children }: { children: ReactNode }) => {
             category: updatedUser.category,
             phone_number: updatedUser.phone_number,
             avg_cost: updatedUser.avg_cost,
-            available: updatedUser.available, // Include availability status
+            available: updatedUser.available,
         };
         await setDoc(providerRef, providerData, { merge: true });
     } 
     // If user was a provider but is now personal, delete the provider document
-    else if (currentProfile.profileType === 'provider' && updatedUser.profileType === 'personal') {
+    else if (wasProvider && updatedUser.profileType === 'personal') {
         await deleteDoc(providerRef);
     }
     
-    setUser(updatedUser);
     setLoading(false);
   }
 
-  const value = useMemo(() => ({ user, loading, updateUserProfile }), [user, loading, updateUserProfile]);
+  const value = useMemo(() => ({ user, loading, updateUserProfile }), [user, loading]);
 
   return (
     <UserContext.Provider value={value}>

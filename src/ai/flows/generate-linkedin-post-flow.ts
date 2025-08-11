@@ -10,10 +10,9 @@
 
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
-import { marked } from 'marked';
 
 const GenerateLinkedInPostInputSchema = z.object({
-  jobDescription: z.string().describe("The full job description text, formatted in markdown."),
+  jobDescription: z.string().describe("The full job description text."),
 });
 export type GenerateLinkedInPostInput = z.infer<typeof GenerateLinkedInPostInputSchema>;
 
@@ -24,25 +23,21 @@ export type GenerateLinkedInPostOutput = z.infer<typeof GenerateLinkedInPostOutp
 
 
 export async function generateLinkedInPost(input: GenerateLinkedInPostInput): Promise<GenerateLinkedInPostOutput> {
-  const result = await generateLinkedInPostFlow(input);
-  // Sanitize and convert markdown to HTML for safe rendering.
-  const parsed = await marked.parse(result.linkedInPost, { gfm: true, breaks: true });
-  result.linkedInPost = parsed;
-  return result;
+  return await generateLinkedInPostFlow(input);
 }
 
 const generateLinkedInPostPrompt = ai.definePrompt({
   name: 'generateLinkedInPostPrompt',
   input: {schema: GenerateLinkedInPostInputSchema},
   output: {schema: GenerateLinkedInPostOutputSchema},
-  prompt: `You are an expert social media manager specializing in creating viral, engaging recruitment posts for LinkedIn.
-Your task is to transform a standard job description into a short, punchy, and exciting post that makes top talent stop scrolling and want to apply.
+  prompt: `You are an expert social media manager who specializes in crafting viral, high-converting recruitment posts for LinkedIn.
+Your task is to **transform a standard job description** into a **short, punchy, and compelling** LinkedIn post that grabs attention and encourages top talent to apply.
 
 **Instructions:**
-1.  **Hook:** Start with a strong, attention-grabbing question or statement. Use an emoji.
-2.  **Core Message:** Keep it concise. Summarize the role's impact and the most exciting aspect of the opportunity in 2-3 energetic sentences. Avoid corporate jargon.
-3.  **Call to Action (CTA):** End with a clear, enthusiastic CTA and ask a question to drive engagement.
-4.  **Hashtags:** Include 3-5 relevant, popular hashtags.
+1.  **Hook:** Start with a strong, attention-grabbing question or statement. Use an emoji. 🚀
+2.  **Core Message:** Keep it concise (2-3 sentences). Don't just list responsibilities; summarize the role's impact and the most exciting aspect of the opportunity. Avoid corporate jargon.
+3.  **Call to Action (CTA):** End with a clear, enthusiastic CTA. Ask a question to drive engagement (e.g., "Ready to build the future?").
+4.  **Hashtags:** Include 3-5 relevant, popular hashtags (e.g., #Hiring, #JobOpening, #[Industry]).
 5.  **Formatting:** The output **MUST** use markdown for formatting (e.g., **bolding**, bullet points).
 
 ---
@@ -73,7 +68,7 @@ const generateLinkedInPostFlow = ai.defineFlow(
       console.error('Error in generateLinkedInPostFlow:', error);
       // Re-throw a more user-friendly error to be caught by the client
       throw new Error(
-        'The AI service is currently unavailable or encountered an error. Please try again later.'
+        'The post generation service failed. Please try again later.'
       );
     }
   }

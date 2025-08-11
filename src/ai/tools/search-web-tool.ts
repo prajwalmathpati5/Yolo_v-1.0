@@ -27,7 +27,7 @@ export const searchWebForExperts = ai.defineTool(
     outputSchema: WebSearchResultSchema,
   },
   async (input) => {
-    const SERP_API_KEY = process.env.SERP_API_KEY;
+    const { SERP_API_KEY } = process.env;
 
     if (!SERP_API_KEY) {
       console.error("Missing SERP_API_KEY in environment variables. Please add it to your .env file.");
@@ -86,7 +86,7 @@ export const searchWebForExperts = ai.defineTool(
       if (!output) {
         return {
             answer: "I found some results, but I had trouble summarizing them.",
-            links: snippets.map(s => ({ title: s.title, link: s.link })),
+            links: snippets.map((s: { title: any; link: any; }) => ({ title: s.title, link: s.link })),
         }
       }
 

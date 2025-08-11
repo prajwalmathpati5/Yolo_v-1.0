@@ -1,3 +1,4 @@
+
 import type { Timestamp } from 'firebase/firestore';
 
 export type Need = {
@@ -37,7 +38,6 @@ export type UserProfile = {
   email: string;
   photoUrl: string;
   profileType: 'personal' | 'provider';
-  available: boolean;
   // Provider-specific fields
   category?: string;
   phone_number?: string;
@@ -81,3 +81,21 @@ export type ServiceRequest = {
   status: 'Pending' | 'Accepted' | 'Declined' | 'Completed';
   cost?: number;
 };
+
+export type ChatConversation = {
+  id?: string;
+  userId: string;
+  timestamp: Date;
+  title: string;
+  initialNeed: string;
+  jobDescriptionResult?: { jobDescription: string; };
+  linkedInPostResult?: { linkedInPost: string; };
+  profileResults?: { 
+    suggestedCandidates: {
+      name: string;
+      link: string;
+      summary: string;
+      thumbnail?: string;
+    }[];
+  };
+}

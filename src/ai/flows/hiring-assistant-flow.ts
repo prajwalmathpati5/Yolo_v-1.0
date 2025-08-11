@@ -28,12 +28,10 @@ const HiringAssistantOutputSchema = z.object({
 export type HiringAssistantOutput = z.infer<typeof HiringAssistantOutputSchema>;
 
 export async function hiringAssistant(input: HiringAssistantInput): Promise<HiringAssistantOutput> {
-  const result = await hiringAssistantFlow(input);
-
   // We are NOT parsing markdown here anymore, as we need the raw text for other flows.
   // The UI will handle the markdown parsing for display.
   
-  return result;
+  return await hiringAssistantFlow(input);
 }
 
 const hiringAssistantPrompt = ai.definePrompt({

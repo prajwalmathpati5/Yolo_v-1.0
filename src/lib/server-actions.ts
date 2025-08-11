@@ -2,22 +2,14 @@
 'use server';
 
 import { db } from '@/lib/firebase';
-import { collection, addDoc, serverTimestamp, query, where, getDocs, setDoc, doc, getDoc, updateDoc, Timestamp } from 'firebase/firestore';
-import type { UserNeed, ServiceProvider, UserProfile, ServiceRequest } from '@/lib/types';
+import { collection, addDoc, serverTimestamp, query, where, getDocs, setDoc, doc, getDoc, updateDoc, Timestamp, orderBy } from 'firebase/firestore';
+import type { UserNeed, ServiceProvider, UserProfile, ServiceRequest, ChatConversation } from '@/lib/types';
 import { revalidatePath } from 'next/cache';
 import { matchCategory } from '@/ai/flows/match-category-flow';
+import { defaultProviders } from '@/lib/seed';
 
-const defaultProviders: (Omit<ServiceProvider, 'id'> & {id: string})[] = [
-    { id: 'prov1', name: 'Speedy Movers', category: 'Moving', phone_number: '555-0101', avg_cost: 150, available: true },
-    { id: 'prov2', name: 'Pro-Move Experts', category: 'Moving', phone_number: '555-0102', avg_cost: 200, available: false },
-    { id: 'prov3', name: 'Brainy Tutors', category: 'Tutoring', phone_number: '555-0103', avg_cost: 50, available: true },
-    { id: 'prov4', name: 'Tech Wizards', category: 'Tech Help', phone_number: '555-0104', avg_cost: 75, available: true },
-    { id: 'prov5', name: 'Go-Get-It Errands', category: 'Errands', phone_number: '555-0105', avg_cost: 30, available: true },
-    { id: 'prov6', name: 'Eventful Planners', category: 'Events', phone_number: '555-0106', avg_cost: 300, available: false },
-    { id: 'prov7', name: 'Dr. Wellness', category: 'Doctor', phone_number: '555-0108', avg_cost: 250, available: true },
-    { id: 'prov8', name: 'Fix-It-Fast', category: 'Plumbing', phone_number: '555-0109', avg_cost: 120, available: true },
-    { id: 'prov9', name: 'Anytime Helper', category: 'Other', phone_number: '555-0107', avg_cost: 40, available: true },
-];
+import type { User } from 'firebase/auth';
+
 
 /**
  * Seeds the Firestore database with a default set of service providers.
@@ -40,6 +32,46 @@ export async function seedProviders() {
         return { success: false, message: 'An unknown error occurred.' };
     }
 }
+
+/**
+ * Gets a user's profile from Firestore or creates it if it doesn't exist.
+ * This function is called upon user login/signup to ensure a profile document exists.
+ * @param firebaseUser - The user object from Firebase Auth.
+ * @returns A promise that resolves to the user's profile data.
+ */
+export async function getOrCreateUserProfile(
+  firebaseUser: User
+): Promise<UserProfile> {
+  const userDocRef = doc(db, 'users', firebaseUser.uid);
+  const userDocSnap = await getDoc(userDocRef);
+
+  if (userDocSnap.exists()) {
+    // If the document exists, return it.
+    return userDocSnap.data() as UserProfile;
+  } else {
+    // This part should ideally be handled by the onUserCreate Cloud Function
+    // for reliability, but we can have a client-side fallback.
+    // This is especially useful for Google Sign-In where there's no separate "signup" step.
+    console.warn(`Profile for ${firebaseUser.uid} not found. Creating a default profile.`);
+    const newUserProfile: UserProfile = {
+      uid: firebaseUser.uid,
+      email: firebaseUser.email || "",
+      name: firebaseUser.displayName || "New User",
+      photoUrl: firebaseUser.photoURL || `https://placehold.co/100x100.png?text=${(firebaseUser.displayName || "N").charAt(0)}`,
+      profileType: "personal", // Default to personal for new sign-ups
+    };
+
+    try {
+      await setDoc(userDocRef, newUserProfile);
+      return newUserProfile;
+    } catch (error) {
+      console.error(`Error creating fallback profile for user: ${firebaseUser.uid}`, error);
+      // If creation fails, we must throw an error.
+      throw new Error('Could not create user profile.');
+    }
+  }
+}
+
 
 // Define the input type for adding a need
 type AddNeedInput = {
@@ -139,12 +171,10 @@ export async function getServiceRequests(providerId: string): Promise<ServiceReq
     const q = query(requestsRef); // You can add ordering here, e.g., orderBy('requestTimestamp', 'desc')
     const querySnapshot = await getDocs(q);
 
-    const requests = querySnapshot.docs.map(doc => ({
+    return querySnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
     } as ServiceRequest));
-
-    return requests;
 }
 
 
@@ -218,10 +248,9 @@ export async function findProvidersByCategory(
         where('available', '==', true) // Only find available providers
     );
     const querySnapshot = await getDocs(q);
-    const matchedProviders = querySnapshot.docs.map(
+    return querySnapshot.docs.map(
       (doc) => ({ id: doc.id, ...doc.data() } as ServiceProvider)
     );
-    return matchedProviders;
   } catch (error) {
     console.error('Error finding providers by category:', error);
     throw new Error('Could not fetch providers from the database.');
@@ -230,6 +259,7 @@ export async function findProvidersByCategory(
 
 /**
  * Analyzes a user's need description to find a matching category and then fetches providers.
+ * This function is self-healing: if no providers are found, it will seed the database.
  * @param description - The user's text description of their need.
  * @returns A promise that resolves to an array of matching ServiceProviders.
  */
@@ -239,14 +269,24 @@ export async function findProvidersBySmartSearch(description: string): Promise<S
     }
     
     try {
-        const allProvidersSnapshot = await getDocs(collection(db, 'providers'));
+        let allProvidersSnapshot = await getDocs(collection(db, 'providers'));
+        
+        // Self-healing: If no providers exist, seed them.
         if (allProvidersSnapshot.empty) {
-            return []; // No providers in DB, no need to call AI.
+            console.log("No providers found in the database. Seeding now...");
+            await seedProviders();
+            // Re-fetch after seeding
+            allProvidersSnapshot = await getDocs(collection(db, 'providers'));
+            if (allProvidersSnapshot.empty) {
+                 console.error("Seeding failed. No providers available.");
+                 return []; // Still empty after attempting to seed.
+            }
         }
         
         const allCategories = [...new Set(allProvidersSnapshot.docs.map(doc => doc.data().category as string))];
         
         if (allCategories.length === 0) {
+            console.warn("Providers exist, but no categories could be extracted.");
             return [];
         }
         
@@ -262,9 +302,75 @@ export async function findProvidersBySmartSearch(description: string): Promise<S
 
     } catch (error) {
         console.error('Error in findProvidersBySmartSearch:', error);
-        if (error instanceof Error && error.message.includes('The AI service')) {
-            throw error; // Re-throw AI service errors to be caught by the client
-        }
-        throw new Error('Could not perform provider search.');
+        throw new Error('An unexpected error occurred while searching for providers.');
+    }
+}
+
+
+/**
+ * Saves or updates a conversation in the user's history.
+ * @param userId The ID of the user.
+ * @param conversation The conversation data to save.
+ * @returns The ID of the saved conversation document.
+ */
+export async function saveOrUpdateConversation(userId: string, conversation: ChatConversation): Promise<string> {
+    const { id, ...convoData } = conversation;
+    const historyRef = collection(db, 'users', userId, 'conversations');
+
+    if (id) {
+        // This is an existing conversation, update it.
+        const docRef = doc(historyRef, id);
+        await updateDoc(docRef, convoData);
+        revalidatePath('/capture');
+        return id;
+    } else {
+        // This is a new conversation, add it.
+        const newDocRef = await addDoc(historyRef, {
+            ...convoData,
+            timestamp: serverTimestamp(),
+        });
+        revalidatePath('/capture');
+        return newDocRef.id;
+    }
+}
+
+
+/**
+ * Fetches the conversation history for a specific user.
+ * @param userId The ID of the user.
+ * @returns A promise that resolves to an array of conversation objects.
+ */
+export async function getConversationHistory(userId: string): Promise<ChatConversation[]> {
+    const historyRef = collection(db, 'users', userId, 'conversations');
+    const q = query(historyRef, orderBy('timestamp', 'desc'));
+    const querySnapshot = await getDocs(q);
+
+    return querySnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+         // Make sure timestamp is a Date object, not a Firestore Timestamp
+        timestamp: (doc.data().timestamp as Timestamp)?.toDate() || new Date(),
+    } as ChatConversation));
+}
+
+/**
+ * Fetches a single conversation by its ID.
+ * @param userId The ID of the user.
+ * @param conversationId The ID of the conversation.
+ * @returns A promise that resolves to the conversation object or null if not found.
+ */
+export async function getConversation(userId: string, conversationId: string): Promise<ChatConversation | null> {
+    const docRef = doc(db, 'users', userId, 'conversations', conversationId);
+    const docSnap = await getDoc(docRef);
+
+    if (docSnap.exists()) {
+        const data = docSnap.data();
+        return {
+            id: docSnap.id,
+            ...data,
+            timestamp: (data.timestamp as Timestamp)?.toDate() || new Date(),
+        } as ChatConversation;
+    } else {
+        return null;
     }
 }

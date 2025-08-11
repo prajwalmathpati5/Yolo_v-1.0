@@ -6,5 +6,8 @@ import './flows/analyze-need-flow';
 import './flows/match-category-flow';
 import './flows/describe-image-flow';
 import './flows/hiring-assistant-flow';
+import './flows/find-profiles-flow';
+import './flows/generate-linkedin-post-flow';
+import './flows/analyze-document-for-roles-flow';
 import './tools/find-providers-tool';
 import './tools/search-web-tool';
