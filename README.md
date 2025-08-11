@@ -1,6 +1,6 @@
-# YOLO Needs - A Firebase Studio Project
+# YOLO Needs 
 
-This is a Next.js starter project built in Firebase Studio. It's designed to help you quickly build applications that need to connect users with service providers or AI-driven solutions.
+This is a Next.js starter project . It's designed to help you quickly build applications that need to connect users with service providers or AI-driven solutions.
 
 ## Getting Started
 

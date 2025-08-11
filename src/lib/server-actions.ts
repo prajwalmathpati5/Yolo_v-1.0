@@ -7,7 +7,6 @@ import type { UserNeed, ServiceProvider, UserProfile, ServiceRequest, ChatConver
 import { revalidatePath } from 'next/cache';
 import { matchCategory } from '@/ai/flows/match-category-flow';
 import { defaultProviders } from '@/lib/seed';
-
 import type { User } from 'firebase/auth';
 
 

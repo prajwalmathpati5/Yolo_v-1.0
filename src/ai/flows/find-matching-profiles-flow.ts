@@ -1,4 +1,3 @@
-
 'use server';
 /**
  * @fileOverview An AI agent that takes a job description, finds potential candidates on the web.
@@ -15,7 +14,7 @@ import { marked } from 'marked';
 
 
 const FindProfilesInputSchema = z.object({
-  jobDescription: z.string().describe("The full job description text."),
+  jobDescription: z.string().describe("Required Skills."),
 });
 export type FindProfilesInput = z.infer<typeof FindProfilesInputSchema>;
 
@@ -32,40 +31,52 @@ export type FindProfilesOutput = z.infer<typeof FindProfilesOutputSchema>;
 
 
 export async function findProfiles(input: FindProfilesInput): Promise<FindProfilesOutput> {
+  console.log('findProfiles input:', input);
   const result = await findProfilesFlow(input);
+  console.log('findProfilesFlow result:', result);
 
   // Sanitize and convert markdown to HTML for safe rendering.
   if (result.suggestedCandidates) {
     for (const candidate of result.suggestedCandidates) {
+      // Always provide thumbnail as a string
+      
       // Use 'marked' to parse the summary which might contain markdown.
       const parsedSummary = await marked.parse(candidate.summary, { gfm: true, breaks: true });
       candidate.summary = parsedSummary;
     }
   }
-  
   return result;
 }
 
 const findProfilesPrompt = ai.definePrompt({
   name: 'findProfilesPrompt',
-  input: {schema: FindProfilesInputSchema},
-  output: {schema: FindProfilesOutputSchema},
+  input: { schema: FindProfilesInputSchema },
+  output: { schema: FindProfilesOutputSchema },
   tools: [searchWebForExperts],
-  prompt: `You are an expert talent sourcer. Your task is to analyze a job description and find real, potential candidates on the web that match the role.
+  prompt: `
+You are an expert talent sourcer AI. Your goal is to find real, verifiable professionals for the given Job Description (JD).  
 
-**Analysis Steps:**
-1.  **Analyze Job Description**: Read the provided job description to understand the ideal candidate's skills and experience.
-2.  **Identify Search Keywords**: Based on the job description, identify the key skills and the role title.
-3.  **Use Web Search for Candidates**: Use the 'searchWebForExperts' tool with a query like "Top [Role Title] profiles on LinkedIn with [Skill 1] and [Skill 2]" to find potential candidates. Prioritize LinkedIn profiles.
-4.  **Extract Real Information**: Review the search results carefully. You **MUST** extract the actual names of the professionals and the direct URLs to their real profiles. Do not invent names or links. Also extract the thumbnail URL if it is provided.
-5.  **Summarize and Format**: Format the output according to the schema. For each candidate, provide their real name, a direct link to their profile, a thumbnail URL if present, and a concise summary explaining why they are a good fit. If you find at least 2-3 plausible candidates, you MUST return them, even if the match isn't perfect.
 
----
 
-Job Description: 
+**Process**:
+1. Read the JD carefully and extract:
+   - Role Title
+   - 3-5 mandatory skills/technologies.
+2. Build a query in this format:
+   \`LinkedIn profile of [Role Title] with [Skill1], [Skill2], [Skill3]\`
+3. Call \`searchWebForExperts\` with the constructed query.
+4. From the results, only keep profiles that explicitly match at least 2 skills.
+5. Return exactly 3-5 candidates with:
+   - name (real, exact spelling from profile)
+   - link (direct to LinkedIn or equivalent)
+   - summary (why they match, referencing skills from JD)
+  
+
+**Job Description**:
 \`\`\`
 {{{jobDescription}}}
 \`\`\`
+
 `,
 });
 
