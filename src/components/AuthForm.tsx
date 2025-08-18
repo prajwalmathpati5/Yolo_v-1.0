@@ -1,9 +1,9 @@
+
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import * as z from 'zod';
-import { useRouter } from 'next/navigation';
 import {
   Form,
   FormControl,
@@ -18,13 +18,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/hooks/use-toast';
-import { auth, db } from '@/lib/firebase';
-import { createUserWithEmailAndPassword, signInWithEmailAndPassword, GoogleAuthProvider, signInWithPopup, updateProfile } from 'firebase/auth';
-import { doc, setDoc } from 'firebase/firestore';
 import { useState } from 'react';
-import type { UserProfile } from '@/lib/types';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
-
+import { useUser } from '@/context/UserContext';
 
 const loginSchema = z.object({
   email: z.string().email({ message: 'Invalid email address.' }),
@@ -46,9 +42,8 @@ const signupSchema = z.object({
     return true;
 }, {
     message: "Category, phone, and cost are required for providers.",
-    path: ["category"], // you can pick any of the conditional fields for the path
+    path: ["category"],
 });
-
 
 const GoogleIcon = () => (
   <svg className="mr-2 h-4 w-4" viewBox="0 0 48 48">
@@ -60,9 +55,9 @@ const GoogleIcon = () => (
 );
 
 export function AuthForm() {
-  const router = useRouter();
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
+  const { login } = useUser();
 
   const loginForm = useForm<z.infer<typeof loginSchema>>({
     resolver: zodResolver(loginSchema),
@@ -84,50 +79,29 @@ export function AuthForm() {
   
   const profileType = signupForm.watch('profileType');
 
-  // MOCKED LOGIN
-  const onLogin = async (values: z.infer<typeof loginSchema>) => {
-    setIsLoading(true);
-    setTimeout(() => {
-      toast({
-        title: 'Login Successful (Mocked)',
-        description: `Welcome, ${values.email}!`,
-      });
-      router.push('/home');
-      setIsLoading(false);
-    }, 1000);
-  };
-
-  // MOCKED SIGNUP
-  const onSignup = async (values: z.infer<typeof signupSchema>) => {
-    setIsLoading(true);
-    setTimeout(() => {
-      toast({
-        title: 'Sign Up Successful (Mocked)',
-        description: `Account created for ${values.email}!`,
-      });
-      router.push('/home');
-      setIsLoading(false);
-    }, 1200);
-  };
-  
-  const handleGoogleSignIn = async () => {
+  const handleAuth = async (values: z.infer<typeof loginSchema> | z.infer<typeof signupSchema>) => {
     setIsLoading(true);
     try {
-        const provider = new GoogleAuthProvider();
-        await signInWithPopup(auth, provider);
-        // The UserProvider will handle creating the user doc on first login
-        router.push('/home');
+      // The login function from the context will now handle the mocked logic
+      await login(values);
+      toast({ title: 'Success!', description: "You have been logged in." });
     } catch (error: any) {
         toast({
-            variant: "destructive",
-            title: "Google Sign-In Failed",
+            variant: 'destructive',
+            title: 'Authentication Failed',
             description: error.message,
         });
     } finally {
         setIsLoading(false);
     }
-  }
+  };
 
+  const handleGoogleSignIn = async () => {
+    toast({
+        title: 'Feature Not Available',
+        description: 'Google Sign-In is disabled in the mocked environment.',
+    });
+  }
 
   return (
     <Card>
@@ -142,14 +116,14 @@ export function AuthForm() {
           </TabsList>
           <TabsContent value="login">
             <Form {...loginForm}>
-              <form onSubmit={loginForm.handleSubmit(onLogin)} className="space-y-4 pt-4">
+              <form onSubmit={loginForm.handleSubmit(handleAuth)} className="space-y-4 pt-4">
                 <FormField
                   control={loginForm.control}
                   name="email"
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Email</FormLabel>
-                      <FormControl><Input placeholder="you@example.com" {...field} /></FormControl>
+                      <FormControl><Input placeholder="personal@example.com" {...field} /></FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -173,7 +147,7 @@ export function AuthForm() {
           </TabsContent>
           <TabsContent value="signup">
             <Form {...signupForm}>
-              <form onSubmit={signupForm.handleSubmit(onSignup)} className="space-y-4 pt-4">
+              <form onSubmit={signupForm.handleSubmit(handleAuth)} className="space-y-4 pt-4">
                 <FormField
                   control={signupForm.control}
                   name="name"
@@ -267,7 +241,7 @@ export function AuthForm() {
                               placeholder="e.g., 5000" 
                               {...field} 
                               onChange={e => {
-                                const { value } = e.target;
+                                const value = e.target.value;
                                 if (value === '' || /^\d*$/.test(value)) {
                                   field.onChange(value);
                                 }

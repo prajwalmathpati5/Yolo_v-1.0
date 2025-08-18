@@ -6,7 +6,7 @@ import { collection, addDoc, serverTimestamp, query, where, getDocs, setDoc, doc
 import type { UserNeed, ServiceProvider, UserProfile, ServiceRequest, ChatConversation } from '@/lib/types';
 import { revalidatePath } from 'next/cache';
 import { matchCategory } from '@/ai/flows/match-category-flow';
-import { defaultProviders } from '@/lib/seed';
+import { defaultProviders } from './seed';
 import type { User } from 'firebase/auth';
 
 
@@ -170,10 +170,12 @@ export async function getServiceRequests(providerId: string): Promise<ServiceReq
     const q = query(requestsRef); // You can add ordering here, e.g., orderBy('requestTimestamp', 'desc')
     const querySnapshot = await getDocs(q);
 
-    return querySnapshot.docs.map(doc => ({
+    const requests = querySnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
     } as ServiceRequest));
+
+    return requests;
 }
 
 
@@ -247,9 +249,10 @@ export async function findProvidersByCategory(
         where('available', '==', true) // Only find available providers
     );
     const querySnapshot = await getDocs(q);
-    return querySnapshot.docs.map(
+    const matchedProviders = querySnapshot.docs.map(
       (doc) => ({ id: doc.id, ...doc.data() } as ServiceProvider)
     );
+    return matchedProviders;
   } catch (error) {
     console.error('Error finding providers by category:', error);
     throw new Error('Could not fetch providers from the database.');
@@ -294,10 +297,10 @@ export async function findProvidersBySmartSearch(description: string): Promise<S
         if (result.matchedCategory) {
             console.log(`AI matched to category: ${result.matchedCategory}`);
             return findProvidersByCategory(result.matchedCategory);
+        } else {
+            console.log(`AI could not match a category for query: "${description}"`);
+            return []; // Return empty if AI could not match a category
         }
-
-        // Return empty if AI could not match a category
-        return [];
 
     } catch (error) {
         console.error('Error in findProvidersBySmartSearch:', error);
@@ -344,12 +347,14 @@ export async function getConversationHistory(userId: string): Promise<ChatConver
     const q = query(historyRef, orderBy('timestamp', 'desc'));
     const querySnapshot = await getDocs(q);
 
-    return querySnapshot.docs.map(doc => ({
+    const history = querySnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data(),
          // Make sure timestamp is a Date object, not a Firestore Timestamp
         timestamp: (doc.data().timestamp as Timestamp)?.toDate() || new Date(),
     } as ChatConversation));
+
+    return history;
 }
 
 /**
@@ -373,3 +378,7 @@ export async function getConversation(userId: string, conversationId: string): P
         return null;
     }
 }
+
+    
+
+    

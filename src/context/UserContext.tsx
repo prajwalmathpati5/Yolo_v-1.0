@@ -1,15 +1,34 @@
 
 'use client';
-import React, { createContext, useContext, useState, ReactNode, useMemo, useEffect } from 'react';
-import { onAuthStateChanged, User as FirebaseAuthUser } from 'firebase/auth';
-import { doc, getDoc, setDoc, updateDoc, deleteDoc } from 'firebase/firestore';
-import { auth, db } from '@/lib/firebase';
+import { createContext, useContext, useState, ReactNode, useMemo, useEffect, useCallback } from 'react';
 import type { UserProfile } from '@/lib/types';
+
+// Mock user data for demonstration
+const mockPersonalUser: UserProfile = {
+  uid: 'mock-personal-user-123',
+  name: 'Alex Rider',
+  email: 'personal@example.com',
+  photoUrl: 'https://placehold.co/100x100.png?text=A',
+  profileType: 'personal',
+};
+
+const mockProviderUser: UserProfile = {
+  uid: 'mock-provider-user-456',
+  name: 'Pro Services Inc.',
+  email: 'provider@example.com',
+  photoUrl: 'https://placehold.co/100x100.png?text=P',
+  profileType: 'provider',
+  category: 'Home Services',
+  phone_number: '555-0100',
+  avg_cost: 100,
+};
 
 type UserContextType = {
   user: UserProfile | null;
   loading: boolean;
+  login: (credentials: {email: string, profileType?: 'personal' | 'provider', name?: string}) => Promise<void>;
   updateUserProfile: (data: Partial<Omit<UserProfile, 'uid'>>) => Promise<void>;
+  logout: () => Promise<void>;
 };
 
 const UserContext = createContext<UserContextType | undefined>(undefined);
@@ -18,73 +37,42 @@ export const UserProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // Simulate initial auth check
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (authUser) => {
-      if (authUser) {
-        const userRef = doc(db, 'users', authUser.uid);
-        const userSnap = await getDoc(userRef);
-
-        if (userSnap.exists()) {
-          setUser({ uid: authUser.uid, ...userSnap.data() } as UserProfile);
-        } else {
-          // Create a new user profile if it doesn't exist (e.g., for first-time Google sign-in)
-          const newUserProfileData: Omit<UserProfile, 'uid'> = {
-            name: authUser.displayName || 'New User',
-            email: authUser.email || '',
-            photoUrl: authUser.photoURL || `https://placehold.co/100x100.png?text=${(authUser.displayName || 'N').charAt(0)}`,
-            profileType: 'personal',
-            available: true,
-          };
-          await setDoc(userRef, newUserProfileData);
-          setUser({ uid: authUser.uid, ...newUserProfileData });
-        }
-      } else {
-        setUser(null);
-      }
-      setLoading(false);
-    });
-
-    return () => unsubscribe();
+    setLoading(false);
   }, []);
 
-  const updateUserProfile = async (data: Partial<Omit<UserProfile, 'uid'>>) => {
-    if (!user) {
-      return;
-    }
-    
+  const login = useCallback(async (credentials: {email: string, profileType?: 'personal' | 'provider', name?: string}) => {
     setLoading(true);
-    const userRef = doc(db, 'users', user.uid);
-    const wasProvider = user.profileType === 'provider';
+    // Simulate API call
+    await new Promise(resolve => setTimeout(resolve, 500));
     
-    // Optimistically update local state
-    const updatedUser = { ...user, ...data };
-    setUser(updatedUser);
-    
-    // Update Firestore user document
-    await updateDoc(userRef, data);
-
-    const providerRef = doc(db, 'providers', user.uid);
-
-    // If user is now a provider, create/update the provider document
-    if (updatedUser.profileType === 'provider') {
-        const providerData = {
-            name: updatedUser.name,
-            category: updatedUser.category,
-            phone_number: updatedUser.phone_number,
-            avg_cost: updatedUser.avg_cost,
-            available: updatedUser.available,
-        };
-        await setDoc(providerRef, providerData, { merge: true });
-    } 
-    // If user was a provider but is now personal, delete the provider document
-    else if (wasProvider && updatedUser.profileType === 'personal') {
-        await deleteDoc(providerRef);
+    // Logic to determine which mock user to log in
+    if (credentials.email.includes('provider') || credentials.profileType === 'provider') {
+      setUser({...mockProviderUser, name: credentials.name || mockProviderUser.name, email: credentials.email});
+    } else {
+       setUser({...mockPersonalUser, name: credentials.name || mockPersonalUser.name, email: credentials.email});
     }
-    
     setLoading(false);
-  }
+  }, []);
 
-  const value = useMemo(() => ({ user, loading, updateUserProfile }), [user, loading]);
+  const updateUserProfile = useCallback(async (data: Partial<Omit<UserProfile, 'uid'>>) => {
+    if (user) {
+      setUser(currentUser => ({...currentUser!, ...data}));
+    }
+  }, [user]);
+
+  const logout = useCallback(async () => {
+    setUser(null);
+  }, []);
+
+  const value = useMemo(() => ({ 
+    user, 
+    loading, 
+    login,
+    updateUserProfile, 
+    logout 
+  }), [user, loading, login, updateUserProfile, logout]);
 
   return (
     <UserContext.Provider value={value}>

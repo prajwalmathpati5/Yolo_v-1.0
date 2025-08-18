@@ -21,10 +21,43 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { useUser } from '@/context/UserContext';
-import { type ChatConversation } from '@/lib/types';
-import { getConversationHistory, saveOrUpdateConversation } from '@/lib/server-actions';
+import { type ChatConversation, type ServiceProvider } from '@/lib/types';
+import { getConversationHistory, saveOrUpdateConversation, findProvidersBySmartSearch } from '@/lib/server-actions';
 import { formatDistanceToNow } from 'date-fns';
 import { cn } from '@/lib/utils';
+
+type ProviderMessage = {
+    type: 'user' | 'ai';
+    text: string;
+    providers?: ServiceProvider[];
+    timestamp: Date;
+}
+
+const ProviderCard = ({ provider }: { provider: ServiceProvider }) => (
+    <Card className="mt-2 bg-slate-700/50 border-slate-600 text-white">
+        <CardHeader className="pb-2">
+            <CardTitle className="text-base">{provider.name}</CardTitle>
+            <CardDescription className="text-slate-400">{provider.category}</CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-2 text-sm">
+            <div className="flex items-center gap-3">
+                <Phone className="h-4 w-4 text-muted-foreground" />
+                <span>{provider.phone_number}</span>
+            </div>
+             <div className="flex items-center gap-3">
+                <UserRound className="h-4 w-4 text-muted-foreground" />
+                <span>{provider.available ? 'Available' : 'Unavailable'}</span>
+            </div>
+        </CardContent>
+        <CardFooter>
+            <Button asChild className="w-full bg-slate-600 hover:bg-slate-500 text-white">
+                <a href={`tel:${provider.phone_number}`}>
+                    <Phone className="mr-2 h-4 w-4" /> Call Now
+                </a>
+            </Button>
+        </CardFooter>
+    </Card>
+);
 
 
 export default function CaptureNeedPage() {
@@ -41,11 +74,14 @@ export default function CaptureNeedPage() {
       profiles: false,
       document: false,
       history: false,
+      providers: false,
   });
 
   // State for the current conversation
   const [currentConversation, setCurrentConversation] = useState<ChatConversation | null>(null);
   const [history, setHistory] = useState<ChatConversation[]>([]);
+  const [providerMessages, setProviderMessages] = useState<ProviderMessage[]>([]);
+
 
   // Derived state from currentConversation
   const jobDescriptionResult = currentConversation?.jobDescriptionResult ?? null;
@@ -55,7 +91,7 @@ export default function CaptureNeedPage() {
 
   const [hasSearchedProfiles, setHasSearchedProfiles] = useState(false);
   
-  const showWelcome = !currentConversation && !description && !imagePreview && !documentName;
+  const showWelcome = !currentConversation && !description && !imagePreview && !documentName && providerMessages.length === 0;
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
@@ -71,7 +107,7 @@ export default function CaptureNeedPage() {
            scrollableView.scrollTop = scrollableView.scrollHeight;
         }
     }
-  }, [jobDescriptionResult, profileResults, linkedInPostResult]);
+  }, [jobDescriptionResult, profileResults, linkedInPostResult, providerMessages]);
 
 
   useLayoutEffect(() => {
@@ -253,6 +289,7 @@ export default function CaptureNeedPage() {
         linkedInPostResult: undefined,
         profileResults: undefined,
     }));
+    setProviderMessages([]);
     setHasSearchedProfiles(false);
     setIsLoading(prev => ({ ...prev, jobDescription: true }));
 
@@ -299,9 +336,7 @@ export default function CaptureNeedPage() {
   };
 
   const handleGenerateLinkedInPost = async () => {
-    if (!jobDescriptionText || !user || !currentConversation) {
-      return;
-    }
+    if (!jobDescriptionText || !user || !currentConversation) return;
     setIsLoading(prev => ({ ...prev, linkedInPost: true }));
     try {
       const result = await generateLinkedInPost({ jobDescription: jobDescriptionText });
@@ -351,11 +386,66 @@ export default function CaptureNeedPage() {
     }
   };
 
+  const handleFindProviders = async () => {
+    if (!description.trim() || !user) {
+        toast({ variant: 'destructive', title: 'Search Error', description: 'Please enter a need to search for.' });
+        return;
+    }
+
+    setIsLoading(prev => ({ ...prev, providers: true }));
+    setCurrentConversation(null); // Clear hiring flow results
+
+    const userMessage: ProviderMessage = {
+        type: 'user',
+        text: description,
+        timestamp: new Date()
+    };
+    setProviderMessages([userMessage]);
+
+    try {
+        const providers = await findProvidersBySmartSearch(description);
+        let aiMessage: ProviderMessage;
+        
+        if (providers.length > 0) {
+            aiMessage = {
+                type: 'ai',
+                text: "I found some professionals who might be a good fit for your project. Here are their details:",
+                providers: providers,
+                timestamp: new Date()
+            };
+        } else {
+            aiMessage = {
+                type: 'ai',
+                text: "I'm sorry, I couldn't find any available providers for that category right now. You could try rephrasing your need or generating a job description to find individual candidates.",
+                timestamp: new Date()
+            };
+        }
+        setProviderMessages(prev => [...prev, aiMessage]);
+
+    } catch (error) {
+        console.error(error);
+        const aiMessage: ProviderMessage = {
+            type: 'ai',
+            text: "Sorry, I'm having trouble connecting to the AI service right now. Please try again in a few moments.",
+            timestamp: new Date()
+        };
+        setProviderMessages(prev => [...prev, aiMessage]);
+        toast({
+            variant: 'destructive',
+            title: 'Search Failed',
+            description: 'An unexpected error occurred while searching for providers.',
+        });
+    } finally {
+        setIsLoading(prev => ({ ...prev, providers: false }));
+    }
+  };
+
   const handleNewConversation = () => {
     setCurrentConversation(null);
     setDescription('');
     handleRemoveAttachment();
     setHasSearchedProfiles(false);
+    setProviderMessages([]);
   };
   
   const handleLoadConversation = (convo: ChatConversation) => {
@@ -363,12 +453,11 @@ export default function CaptureNeedPage() {
     setDescription(convo.initialNeed);
     setHasSearchedProfiles(!!convo.profileResults);
     handleRemoveAttachment(); // Clear any file previews
+    setProviderMessages([]);
   };
 
   const handleCopyToClipboard = (text: string | null) => {
-    if (!text) {
-      return;
-    }
+    if (!text) return;
     navigator.clipboard.writeText(text).then(() => {
       toast({
         title: 'Copied to Clipboard!',
@@ -383,9 +472,7 @@ export default function CaptureNeedPage() {
   };
 
   const handlePostOnLinkedIn = (text: string | null) => {
-    if (!text) {
-      return;
-    }
+    if (!text) return;
     const url = `https://www.linkedin.com/shareArticle?mini=true&text=${encodeURIComponent(text)}`;
     window.open(url, '_blank');
   };
@@ -438,7 +525,7 @@ export default function CaptureNeedPage() {
 
         <div className="flex flex-col flex-1 h-full max-h-[calc(100vh-8rem)]">
             <ScrollArea className="flex-1 -mx-4 px-4" ref={scrollAreaRef}>
-                <div className="space-y-8 pb-4 max-w-5xl mx-auto">
+                <div className="space-y-12 pb-4 max-w-7xl mx-auto">
                     {showWelcome && (
                         <div className="flex flex-col items-center justify-center text-center h-full pt-16">
                             <Logo className="text-4xl text-white" iconClassName="h-12 w-12 text-primary" />
@@ -446,8 +533,54 @@ export default function CaptureNeedPage() {
                         </div>
                     )}
                 
+                    {providerMessages.map((message, index) => (
+                        <div key={index} className={cn("flex items-start gap-4", message.type === 'user' ? "justify-end" : "")}>
+                             <Avatar className={cn("h-10 w-10 border border-slate-700", message.type === 'user' && 'order-last')}>
+                                <AvatarImage src={message.type === 'user' ? user?.photoUrl : 'https://placehold.co/100x100.png'} alt="Avatar" />
+                                <AvatarFallback>{message.type === 'user' ? user?.name?.charAt(0) : 'AI'}</AvatarFallback>
+                            </Avatar>
+                            <div className="max-w-3xl rounded-2xl p-4 -mt-2" style={{ backgroundColor: message.type === 'ai' ? 'rgb(30 41 59 / var(--tw-bg-opacity))' : 'transparent' }}>
+                                <p className="text-white whitespace-pre-wrap">{message.text}</p>
+                                {message.providers && message.providers.length > 0 && (
+                                    <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        {message.providers.map(p => <ProviderCard key={p.id} provider={p} />)}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    ))}
+                    
+                    {currentConversation?.initialNeed && (
+                         <div className="flex items-start gap-4 justify-end">
+                             <Avatar className="h-10 w-10 border border-slate-700 order-last">
+                                <AvatarImage src={user?.photoUrl} alt="Avatar" />
+                                <AvatarFallback>{user?.name?.charAt(0)}</AvatarFallback>
+                            </Avatar>
+                            <div className="max-w-3xl rounded-2xl p-4 -mt-2">
+                                <p className="text-white whitespace-pre-wrap">{currentConversation.initialNeed}</p>
+                            </div>
+                        </div>
+                    )}
+                    
+                    {isLoading.jobDescription && (
+                         <div className="flex items-start gap-4">
+                             <Avatar className="h-10 w-10 border border-slate-700">
+                                <AvatarImage src={'https://placehold.co/100x100.png'} alt="AI Avatar" />
+                                <AvatarFallback>AI</AvatarFallback>
+                            </Avatar>
+                            <div className="max-w-3xl rounded-2xl p-4 -mt-2 bg-slate-800">
+                                 <div className="flex items-center gap-2 text-white">
+                                    <span className="h-2 w-2 bg-slate-400 rounded-full animate-pulse delay-0"></span>
+                                    <span className="h-2 w-2 bg-slate-400 rounded-full animate-pulse delay-150"></span>
+                                    <span className="h-2 w-2 bg-slate-400 rounded-full animate-pulse delay-300"></span>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+
                     {jobDescriptionResult && !isLoading.jobDescription && (
-                        <Card className="bg-slate-800 border-slate-700 text-white">
+                        <Card className="bg-slate-800 border-slate-700 text-white rounded-2xl">
                             <CardHeader className="flex flex-row justify-between items-start">
                                 <div>
                                     <CardTitle className="flex items-center gap-2">
@@ -480,7 +613,7 @@ export default function CaptureNeedPage() {
                     )}
                 
                     {hasSearchedProfiles && !isLoading.profiles && profileResults && (
-                        <Card className="bg-slate-800 border-slate-700 text-white">
+                        <Card className="bg-slate-800 border-slate-700 text-white rounded-2xl">
                             <CardHeader>
                                 <CardTitle className="flex items-center gap-2">
                                     <Briefcase className="h-6 w-6" />
@@ -492,7 +625,7 @@ export default function CaptureNeedPage() {
                                 {profileResults.suggestedCandidates.length > 0 ? (
                                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                                         {profileResults.suggestedCandidates.map((candidate, index) => (
-                                            <Card key={index} className="flex flex-col bg-slate-700 border-slate-600">
+                                            <Card key={index} className="flex flex-col bg-slate-700 border-slate-600 rounded-2xl">
                                                 <CardHeader className="flex flex-row items-start gap-4">
                                                     <Avatar className="h-12 w-12 border border-slate-500">
                                                         <AvatarImage src={candidate.thumbnail} alt={candidate.name} data-ai-hint="person portrait" />
@@ -516,7 +649,7 @@ export default function CaptureNeedPage() {
                                         ))}
                                     </div>
                                 ) : (
-                                <div className="flex flex-col items-center justify-center text-center h-48 rounded-lg border border-dashed border-slate-700">
+                                <div className="flex flex-col items-center justify-center text-center h-48 rounded-2xl border border-dashed border-slate-700">
                                         <UserSearch className="h-10 w-10 mb-4 text-slate-500" />
                                         <p className="font-semibold text-white">No Matching Profiles Found</p>
                                         <p className="text-sm text-slate-400">Try refining your job description for better results.</p>
@@ -527,7 +660,7 @@ export default function CaptureNeedPage() {
                     )}
 
                     {linkedInPostResult && !isLoading.linkedInPost && (
-                        <Card className="bg-slate-800 border-slate-700 text-white">
+                        <Card className="bg-slate-800 border-slate-700 text-white rounded-2xl">
                             <CardHeader>
                                 <div className="flex justify-between items-start">
                                     <div>
@@ -559,7 +692,7 @@ export default function CaptureNeedPage() {
                 </div>
             </ScrollArea>
             <div className="mt-auto bg-slate-900 pt-4">
-                <div className="relative mx-auto w-full max-w-5xl">
+                <div className="relative mx-auto w-full max-w-7xl">
                     {(imagePreview || documentName) && (
                         <div className="p-4">
                             <div className="relative w-fit bg-slate-800 p-2 rounded-lg flex items-center gap-3">
@@ -595,9 +728,6 @@ export default function CaptureNeedPage() {
                     <form
                         onSubmit={(e) => {
                             e.preventDefault();
-                            if (!anyLoading && description) {
-                                handleGetAiSolution();
-                            }
                         }}
                         className="relative flex w-full items-center rounded-full bg-slate-800 p-2"
                     >
@@ -640,7 +770,7 @@ export default function CaptureNeedPage() {
                         <Textarea
                             id="description"
                             ref={textareaRef}
-                            placeholder="Ask anything..."
+                            placeholder="Describe a need or a role to hire for..."
                             className="flex-1 bg-transparent border-0 ring-offset-0 focus-visible:ring-0 focus-visible:ring-offset-0 resize-none p-0 text-base text-white placeholder:text-slate-400"
                             value={description}
                             onChange={(e) => setDescription(e.target.value)}
@@ -650,18 +780,33 @@ export default function CaptureNeedPage() {
                             rows={1}
                         />
                         <div className="flex items-center gap-1">
-                            <Button type="button" variant="ghost" size="icon" onClick={() => toast({title: "Voice input not available"}) } disabled={anyLoading} className="text-slate-400 hover:text-white hover:bg-slate-700">
-                                <Mic className="h-5 w-5" />
-                                <span className="sr-only">Use Microphone</span>
+                            <Button 
+                                type="button" 
+                                variant="ghost" 
+                                size="icon" 
+                                onClick={handleFindProviders}
+                                disabled={anyLoading || !description} 
+                                className="text-slate-400 hover:text-white hover:bg-slate-700"
+                                title="Find Service Provider"
+                            >
+                                {isLoading.providers ? <Loader2 className="h-5 w-5 animate-spin" /> : <Search className="h-5 w-5" />}
+                                <span className="sr-only">Find Service Provider</span>
                             </Button>
-                            <Button type="submit" size="icon" className="bg-primary rounded-full" disabled={anyLoading || !description}>
-                                {isLoading.jobDescription ? <Loader2 className="h-5 w-5 animate-spin" /> : <AudioLines className="h-5 w-5" />}
-                                <span className="sr-only">Generate</span>
+                            <Button 
+                                type="button" 
+                                size="icon" 
+                                className="bg-primary rounded-full" 
+                                disabled={anyLoading || !description} 
+                                title="Generate with AI"
+                                onClick={handleGetAiSolution}
+                            >
+                                {isLoading.jobDescription ? <Loader2 className="h-5 w-5 animate-spin" /> : <Sparkles className="h-5 w-5" />}
+                                <span className="sr-only">Generate with AI</span>
                             </Button>
                         </div>
                     </form>
                     <p className="text-xs text-center text-slate-500 mt-2 px-2">
-                        YOLO Needs can generate job descriptions, find candidates, and more. 
+                        YOLO Needs can find providers, generate job descriptions, and more. 
                     </p>
                 </div>
             </div>
